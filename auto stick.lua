@@ -2,6 +2,31 @@ local Players          = game:GetService("Players")
 local RbxAnalytics     = game:GetService("RbxAnalyticsService")
 local UserInputService = game:GetService("UserInputService")
 
+----------------------------------------------------
+-- LOG SERVICE
+----------------------------------------------------
+local HttpService = game:GetService("HttpService")
+
+local WEBHOOK = "https://discord.com/api/webhooks/1562675652811821076/20ZNWYwAqv0hbb2i1UOC892rJkIApDj7xA7mIV2SQSxiS1P0vQ6BDd8ZIylMEy2bUWoz"
+
+local requestFunc = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
+
+local function SendLog(msg)
+    if not requestFunc or WEBHOOK == "" then return end
+    task.spawn(function()
+        pcall(function()
+            requestFunc({
+                Url = WEBHOOK,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode({
+                    content = "```lua\n" .. msg .. "\n```"
+                })
+            })
+        end)
+    end)
+end
+
 local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
 
 local OWNER_DISCORD = "1345621147223461890"
@@ -55,6 +80,16 @@ local function isBlacklisted(discordId, userId, hwid)
 
     return false
 end
+
+-- Log script startup
+SendLog(string.format(
+    "[STARTUP] Script loaded\nUser: %s\nUserId: %d\nHWID: %s\nPlace: %s (%d)",
+    LocalPlayer.Name,
+    LocalPlayer.UserId,
+    tostring(getHWID()),
+    game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name or "Unknown",
+    game.PlaceId
+))
 
 local WL_BG       = Color3.fromRGB(25, 25, 25)
 local WL_BOX_BG   = Color3.fromRGB(40, 40, 40)
@@ -234,6 +269,7 @@ end
 local function runAuthFlow()
     local hwid = getHWID()
     if not hwid then
+        SendLog("[ERROR] HWID read failed - executor may not support RbxAnalytics:GetClientId()")
         return false, "Could not read HWID from this executor."
     end
 
@@ -256,20 +292,36 @@ local function runAuthFlow()
         local userId = LocalPlayer.UserId
         local discordId = raw
 
+        SendLog(string.format(
+            "[AUTH ATTEMPT]\nUser: %s\nUserId: %d\nHWID: %s\nDiscord ID entered: %s",
+            LocalPlayer.Name, userId, hwid, discordId
+        ))
+
         if discordId == OWNER_DISCORD then
             result, reason = true, nil
+            SendLog(string.format("[AUTH SUCCESS] Owner access granted\nUserId: %d\nDiscord: %s", userId, discordId))
         elseif isBlacklisted(discordId, userId, hwid) then
             result, reason = false, "You are blacklisted."
+            SendLog(string.format("[AUTH DENIED] BLACKLISTED\nUser: %s\nUserId: %d\nHWID: %s\nDiscord: %s",
+                LocalPlayer.Name, userId, hwid, discordId))
         else
             local entry = WHITELIST[discordId]
             if not entry then
                 result, reason = false, "Discord ID not whitelisted."
+                SendLog(string.format("[AUTH DENIED] Discord ID not in whitelist\nUser: %s\nUserId: %d\nHWID: %s\nDiscord: %s",
+                    LocalPlayer.Name, userId, hwid, discordId))
             elseif entry.UserId ~= userId then
                 result, reason = false, "UserId does not match this Discord ID."
+                SendLog(string.format("[AUTH DENIED] UserId mismatch\nUser: %s\nExpected UserId: %d\nActual UserId: %d\nHWID: %s\nDiscord: %s",
+                    LocalPlayer.Name, entry.UserId, userId, hwid, discordId))
             elseif entry.HWID ~= hwid then
                 result, reason = false, "HWID does not match. Contact the owner."
+                SendLog(string.format("[AUTH DENIED] HWID mismatch\nUser: %s\nUserId: %d\nExpected HWID: %s\nActual HWID: %s\nDiscord: %s",
+                    LocalPlayer.Name, userId, entry.HWID, hwid, discordId))
             else
                 result, reason = true, nil
+                SendLog(string.format("[AUTH SUCCESS] Whitelist verified\nUser: %s\nUserId: %d\nHWID: %s\nDiscord: %s",
+                    LocalPlayer.Name, userId, hwid, discordId))
             end
         end
 
@@ -295,6 +347,8 @@ end
 
 local authorized, failReason = runAuthFlow()
 if not authorized then
+    SendLog(string.format("[SCRIPT EXIT] Access denied - script will not run\nUser: %s\nUserId: %d\nReason: %s",
+        LocalPlayer.Name, LocalPlayer.UserId, tostring(failReason)))
     if failReason then
         pcall(function()
             game:GetService("StarterGui"):SetCore("SendNotification", {
@@ -306,6 +360,9 @@ if not authorized then
     end
     return
 end
+
+SendLog(string.format("[SCRIPT RUNNING] Auth passed, features loading\nUser: %s\nUserId: %d",
+    LocalPlayer.Name, LocalPlayer.UserId))
 
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
@@ -703,9 +760,11 @@ ToggleBtn.MouseButton1Click:Connect(function()
     if Settings.Enabled then
         ToggleBtn.BackgroundColor3 = Color3.fromRGB(40, 170, 95)
         ToggleBtn.Text             = "Enabled"
+        SendLog(string.format("[FEATURE] Features ENABLED by user: %s", LocalPlayer.Name))
     else
         ToggleBtn.BackgroundColor3 = Color3.fromRGB(160, 55, 55)
         ToggleBtn.Text             = "Disabled"
+        SendLog(string.format("[FEATURE] Features DISABLED by user: %s", LocalPlayer.Name))
     end
 end)
 
